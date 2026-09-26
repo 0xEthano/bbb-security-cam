@@ -1,0 +1,10 @@
+[Interface]
+PrivateKey = REPLACE_WITH_NEW_IPHONE_PRIVATE_KEY
+Address = 10.10.10.2/32
+
+[Peer]
+PublicKey = REPLACE_WITH_NEW_BBB_PUBLIC_KEY
+PresharedKey = REPLACE_WITH_NEW_IPHONE_PSK
+Endpoint = YOUR-DDNS-OR-PUBLIC-IP:51820
+AllowedIPs = 10.10.10.1/32
+PersistentKeepalive = 25

@@ -1,0 +1,4 @@
+# Debian 12 default admin user for this appliance.
+# Only the camera-control wrapper is passwordless; do not grant arbitrary
+# systemctl access through this rule.
+debian ALL=(root) NOPASSWD: /usr/local/sbin/security-cam-ctl on, /usr/local/sbin/security-cam-ctl off, /usr/local/sbin/security-cam-ctl restart, /usr/local/sbin/security-cam-ctl status

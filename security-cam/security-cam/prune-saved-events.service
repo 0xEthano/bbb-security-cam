@@ -1,0 +1,24 @@
+[Unit]
+Description=Prune old security-camera recordings
+RequiresMountsFor=/var/lib/security-cam
+ConditionPathIsMountPoint=/var/lib/security-cam
+
+[Service]
+Type=oneshot
+User=motion
+Group=motion
+ExecStart=/opt/security-cam/prune-saved-events.sh
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET
+ReadWritePaths=/var/lib/security-cam/saved_events /var/lib/security-cam/.current_event
+UMask=0077

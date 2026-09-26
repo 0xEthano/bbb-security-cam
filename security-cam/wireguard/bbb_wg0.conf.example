@@ -1,0 +1,22 @@
+[Interface]
+Address = 10.10.10.1/24
+ListenPort = 51820
+PrivateKey = REPLACE_WITH_NEW_BBB_PRIVATE_KEY
+
+[Peer]
+# iPhone
+PublicKey = REPLACE_WITH_NEW_IPHONE_PUBLIC_KEY
+PresharedKey = REPLACE_WITH_NEW_IPHONE_PSK
+AllowedIPs = 10.10.10.2/32
+
+[Peer]
+# Desktop computer
+PublicKey = REPLACE_WITH_NEW_DESKTOP_PUBLIC_KEY
+PresharedKey = REPLACE_WITH_NEW_DESKTOP_PSK
+AllowedIPs = 10.10.10.3/32
+
+[Peer]
+# Laptop
+PublicKey = REPLACE_WITH_NEW_LAPTOP_PUBLIC_KEY
+PresharedKey = REPLACE_WITH_NEW_LAPTOP_PSK
+AllowedIPs = 10.10.10.4/32

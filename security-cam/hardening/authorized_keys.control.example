@@ -1,0 +1,9 @@
+# Optional: dedicated key entries that can ONLY control the camera.
+# Replace each ssh-ed25519 public key with a key generated for that device.
+# These entries deliberately have no shell, no forwarding, no agent access,
+# no X11, and no PTY.
+#
+# Example:
+# command="/usr/local/sbin/security-cam-ssh-control",restrict ssh-ed25519 AAAA... camera-phone
+# command="/usr/local/sbin/security-cam-ssh-control",restrict ssh-ed25519 AAAA... camera-desktop
+# command="/usr/local/sbin/security-cam-ssh-control",restrict ssh-ed25519 AAAA... camera-laptop

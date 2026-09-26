@@ -1,0 +1,33 @@
+[Unit]
+Description=Rolling MJPEG security-camera ring buffer
+After=motion.service
+Requires=motion.service
+RequiresMountsFor=/var/lib/security-cam
+ConditionPathIsMountPoint=/var/lib/security-cam
+
+[Service]
+Type=simple
+User=motion
+Group=motion
+ExecStart=/opt/security-cam/segment-ring.sh
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1
+ReadWritePaths=/var/lib/security-cam/ring
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[DEFAULT]
+# Debian 12/bookworm's older Fail2Ban package can otherwise expect a file log
+# that is not present on a journald-only system. Use the systemd journal.
+backend = systemd
+banaction = nftables
+
+[sshd]
+enabled = true
+bantime = 1h
+findtime = 10m
+maxretry = 5

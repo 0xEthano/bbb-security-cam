@@ -1,0 +1,17 @@
+#!/bin/bash
+# Optional forced-command entry point for dedicated camera-control SSH keys.
+# The client can request only: security-cam-ctl on|off|restart|status
+set -euo pipefail
+
+cmd="${SSH_ORIGINAL_COMMAND:-}"
+
+case "$cmd" in
+    'security-cam-ctl on') action=on ;;
+    'security-cam-ctl off') action=off ;;
+    'security-cam-ctl restart') action=restart ;;
+    'security-cam-ctl status') action=status ;;
+    '') echo 'no command supplied' >&2; exit 2 ;;
+    *) echo 'command not permitted' >&2; exit 126 ;;
+esac
+
+exec /usr/bin/sudo /usr/local/sbin/security-cam-ctl "$action"

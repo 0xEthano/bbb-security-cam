@@ -1,0 +1,24 @@
+#!/bin/bash
+# Minimal privileged camera power/control wrapper.
+# Use through sudo; callers cannot pass arbitrary systemctl arguments.
+set -euo pipefail
+
+case "${1:-}" in
+    on)
+        /usr/bin/systemctl start motion.service segment-ring.service
+        ;;
+    off)
+        /usr/bin/systemctl stop segment-ring.service motion.service
+        ;;
+    restart)
+        /usr/bin/systemctl restart motion.service segment-ring.service
+        ;;
+    status)
+        printf 'motion: %s\n' "$(/usr/bin/systemctl is-active motion.service || true)"
+        printf 'segment-ring: %s\n' "$(/usr/bin/systemctl is-active segment-ring.service || true)"
+        ;;
+    *)
+        echo "usage: security-cam-ctl {on|off|restart|status}" >&2
+        exit 2
+        ;;
+esac
