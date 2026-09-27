@@ -33,7 +33,7 @@ The recording scripts deliberately refuse to write if `/var/lib/security-cam` is
 
 Connect the BBB to Ethernet, plug it into your PC with the micro USB cable, and determine its LAN IP address.
 
-I recommend using Tera Term, it is automatically setup correctly except for the speed. Go to `Setup > Serial port >` in the window, change `Speed:` from `9600` to `115200`.
+I recommend using [Tera Term](https://teratermproject.github.io/index-en.html), it is automatically setup correctly except for the speed. Go to `Setup > Serial port >` in the window, change `Speed:` from `9600` to `115200`.
 
 Log into the BBB. It should prompt for a new debian password if you did not set it pre-flash.
 
