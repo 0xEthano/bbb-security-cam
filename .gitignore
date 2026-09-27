@@ -19,3 +19,6 @@ ring/
 Thumbs.db
 *.swp
 *~
+
+#manifest generator
+/generate-manifest.ps1

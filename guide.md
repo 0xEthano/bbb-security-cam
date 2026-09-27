@@ -2,46 +2,47 @@
 
 This guide assumes:
 
-- BeagleBone Black running Debian 12 (setup on v6.18.x kernel) / BeagleBoard image
+- BeagleBone Black running Debian 12 (setup tested on v6.18.x kernel) / BeagleBoard image
 - Ethernet networking
 - Microsoft LifeCam Cinema or another compatible UVC camera
 - Separate microSD card for recording storage
 - Windows PC used for initial setup
-- Project archive: `security-cam.zip`
+- The provided micro USB cable for the BBB
 
 The intended final architecture is:
 
 ```text
 BeagleBone eMMC holds:
-├── Debian
-├── Motion
-├── FFmpeg
-├── WireGuard
-├── nftables
-└── security-camera scripts
+ Debian install
+ Motion
+ FFmpeg
+ WireGuard
+ nftables
+ security-camera scripts
 
 microSD holds:
-└── /var/lib/security-cam
-    ├── ring/
-    └── saved_events/
+/var/lib/security-cam
+which contains the rolling buffer and saved events.
 ```
 
-The recording scripts deliberately refuse to write if `/var/lib/security-cam` is not a mounted filesystem, preventing recordings from accidentally filling the BBB's small eMMC. The project takes around 2GB of space, if you include debugging tools.
+The recording scripts deliberately refuse to write if `/var/lib/security-cam` is not a mounted filesystem, i.e. if the uSD is not detected, to prevent recordings from accidentally filling the BBB's eMMC.
 
 ---
 
 # 1. Connect to the BeagleBone
 
-Connect the BBB to Ethernet and determine its LAN IP address.
+Connect the BBB to Ethernet, plug it into your PC with the micro USB cable, and determine its LAN IP address.
 
-From the BBB directly:
+I recommend using Tera Term, it is automatically setup correctly except for the speed. Go to `Setup > Serial port >` in the window, change `Speed:` from `9600` to `115200`.
 
+Log into the BBB. It should prompt for a new debian password if you did not set it pre-flash.
+
+Once logged in, run:
 ```bash
 ip -4 addr show eth0
 ```
 
 Look for:
-
 ```text
 inet 192.168.x.x/24
 OR
@@ -49,208 +50,134 @@ inet 10.x.x.x/24
 OR similar
 ```
 
-Make sure to not confuse router IP and BBB IP. Connect using Tera Term or another SSH client.
+Make sure not to confuse the router IP with the BBB IP.
 
-Typical SSH login:
-
+From Windows PowerShell, log in through SSH:
 ```powershell
 ssh debian@<BBB-LAN-IP>
 ```
+You can disconnect the BBB from your PC and move it to it's desired location. 
 
-Keep this initial terminal session open during the setup process.
-
----
-
-# 2. Transfer the Project ZIP to the BBB
-
-## Using Tera Term
-
-Connect to the BBB over SSH first.
-
-Then in Tera Term, use:
-
-```text
-File → SSH SCP
-```
-
-Zip the "security-cam" folder, and select security-cam.zip as the local file.
-
-Use the remote destination:
-
-```text
-/home/debian/security-cam.zip
-```
-
-Send the file.
-
-Afterward, verify from the BBB:
-
-```bash
-ls -lh ~/security-cam.zip
-```
-
-You should see the transferred archive.
+Open a new SSH session. Keep this initial terminal session open during setup, especially while changing SSH or firewall settings.
 
 ---
 
-## Alternative: SCP from PowerShell
+# 2. Download the Project
 
-Instead of Tera Term:
+## Recommended: Clone from GitHub
 
-```powershell
-scp .\security-cam.zip debian@<BBB-LAN-IP>:/home/debian/
-```
-
-For example:
-
-```powershell
-scp .\security-cam.zip debian@10.0.0.X:/home/debian/
-OR
-scp .\security-cam.zip debian@192.168.X.X:/home/debian/ 
-```
-
----
-
-# 3. Verify the Download
-
-The expected SHA-256 for this release is:
-
-```text
-ec6b4edea422f25b4c90234cfd8802e1bd47c1364d8535c355459869e3e4672f
-```
-
-On the BBB:
-
-```bash
-sha256sum ~/security-cam.zip
-```
-
-The result should match one-to-one.
-
----
-
-# 4. Extract the Project
-
-Check whether `unzip` is installed:
-
-```bash
-command -v unzip
-```
-
-If necessary:
-
+With the BBB connected to Ethernet, install Git if needed:
 ```bash
 sudo apt update
-sudo apt install unzip
+sudo apt install -y git
 ```
 
-Note: careful running 'sudo apt upgrade'. Upgrading the kernel has a high chance of messing up the BBB. Using -s as an argument can show you what is about to be changed, if you're uncertain.
-
-Extract:
-
+Clone the repository:
 ```bash
 cd ~
-unzip security-cam.zip
+git clone https://github.com/0xEthano/bbb-security-cam.git bbb-security-cam
 ```
 
-Enter the project directory:
-
+Enter the project:
 ```bash
-cd ~/security-cam
+cd ~/bbb-security-cam
 ```
 
 Check the files:
-
 ```bash
 ls
 ```
 
 Expected top-level contents include:
-
 ```text
-CHANGELOG.md
 README.md
-MANIFEST.sha256
-hardening/
-motion/
-security-cam/
-wireguard/
+guide.md
+appliance/
+    hardening/
+    motion/
+    security-cam/
+    wireguard/
 ```
 
 Optionally verify the included file manifest:
-
 ```bash
 sha256sum -c MANIFEST.sha256
 ```
 
-All files should report "OK".
+All files should report `OK`.
 
 ---
 
-# 5. Verify the Camera
+A note before proceeding: be careful with running `sudo apt upgrade` on the BBB. Kernel updates in particular can occasionally introduce board-specific issues, typically forcing a reflash. If uncertain, simulate first:
+```bash
+sudo apt-get -s upgrade
+```
+
+---
+
+# 3. Verify the Camera
 
 Plug the USB camera into the BBB.
 
 Check USB detection:
-
 ```bash
 lsusb
 ```
 
 For the Microsoft LifeCam Cinema, expect something similar to:
-
 ```text
-12ab:34cd Microsoft Corp. LifeCam Cinema
+045e:075d Microsoft Corp. LifeCam Cinema
 ```
 
 Check for the video device:
-
 ```bash
 ls -l /dev/video*
 ```
 
 The primary camera should normally appear as:
-
 ```text
 /dev/video0
 ```
 
-Do not continue if the camera is not detected. Without a UVC-compliant video source, the rest will not work. Debug the camera first, or try with a different camera. This will likely work on any typical camera, so long as 720p @ 15fps (or lower) is an available format.
+Check its supported formats:
+```bash
+v4l2-ctl --device=/dev/video0 --list-formats-ext
+```
+
+The tested LifeCam configuration is MJPEG at `1280x720`, 15 FPS. You will need to change it if that is not available. Avoid formats that are uncompresed as they may use more bandwith than necessary, slowing the system down.
+
+Do not continue if the camera is not detected. Without a UVC-compatible video source, the rest of the system will not work correctly.
 
 ---
 
-# 6. Configure the Recording microSD
+# 4. Configure the Recording microSD
 
 Be careful here. The BBB eMMC and microSD may appear similar:
-
 ```text
-mmcblk1   → BBB eMMC
-mmcblk0   → microSD
+mmcblk1  (typically) → BBB eMMC
+mmcblk0  (typically) → microSD
 ```
 
 Verify before formatting anything:
-
 ```bash
 lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS
 ```
 
 On my tested system:
-
 ```text
 mmcblk1        ~3.6G     BBB eMMC
 mmcblk0        ~29.2G    recording microSD
 ```
 
-Never blindly copy device names / formatting commands from this guide without verifying them on your own board.
+Never blindly copy device names or formatting commands from this guide without verifying them on your own board.
 
 ---
 
-## 6.1 Format the microSD
+## 4.1 Format the microSD
 
-If the card already contains the desired ext4 filesystem, skip this step.
+If the card already contains the desired ext4 filesystem, or you have data on it you'd like to save, skip this step.
 
 Otherwise, assuming the recording partition is `/dev/mmcblk0p1`:
-
 ```bash
 sudo mkfs.ext4 -L SECURITY_CAM /dev/mmcblk0p1
 ```
@@ -258,13 +185,11 @@ sudo mkfs.ext4 -L SECURITY_CAM /dev/mmcblk0p1
 This destroys everything currently on that partition.
 
 Get its UUID:
-
 ```bash
 sudo blkid /dev/mmcblk0p1
 ```
 
 Example:
-
 ```text
 UUID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 TYPE="ext4"
@@ -274,121 +199,98 @@ Copy the UUID.
 
 ---
 
-# 7. Configure the Permanent Storage Mount
+# 5. Configure the Permanent Storage Mount
 
 Create the mount point:
-
 ```bash
 sudo mkdir -p /var/lib/security-cam
 ```
 
 Edit:
-
 ```bash
 sudo nano /etc/fstab
 ```
 
 Add:
-
 ```fstab
 UUID=<YOUR_SD_UUID> /var/lib/security-cam ext4 defaults,noatime,nofail 0 2
 ```
 
 For example:
-
 ```fstab
 UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /var/lib/security-cam ext4 defaults,noatime,nofail 0 2
 ```
 
-Save and exit. (Ctrl+S then Ctrl+X)
+Save and exit.
 
-Mount it:
-
+Mount it, verify the mount, and check:
 ```bash
 sudo mount -a
-```
 
-Verify:
-
-```bash
 findmnt /var/lib/security-cam
-```
 
-Also check:
-
-```bash
 df -h /var/lib/security-cam
 ```
 
-You should see the microSD filesystem, not the eMMC root filesystem. Don't continue until this is correct. 
-If you accidentally overwrote your eMMC, reflashing is likely required.
+You should see the microSD filesystem, not the eMMC root filesystem. Do not continue until this is correct.
+
+Be careful with `mkfs` and `/etc/fstab`; using the wrong device will simply not work in the long-run.
 
 ---
 
-# 8. Set Up SSH Public-Key Authentication
+# 6. Set Up SSH Public-Key Authentication
 
 Keep the original SSH session open while testing.
 
-The hardening installer should refuse to proceed unless the `debian` account already has an SSH authorized key, but, be safe rather than sorry.
+The hardening installer should refuse to proceed unless the `debian` account already has an SSH authorized key, but verify it yourself before continuing.
 
 On Windows PowerShell, generate a dedicated key:
-
 ```powershell
 ssh-keygen -t ed25519 -a 100 -f "$env:USERPROFILE\.ssh\bbb_security_cam"
 ```
 
 This creates:
-
 ```text
-bbb_security_cam
-bbb_security_cam.pub
+bbb_security_cam       # Private key
+bbb_security_cam.pub   # Public key
 ```
 
-The private file:
+The private file must stay on your PC. Only the `.pub` file goes onto the BBB. Don't upload private keys anywhere.
 
-```text
-bbb_security_cam
-```
-
-must stay on your PC. Only the `.pub` file goes onto the BBB.
-
-While password SSH still works, run from Windows PowerShell:
-
+While password-based SSH still works, run from Windows PowerShell:
 ```powershell
 Get-Content "$env:USERPROFILE\.ssh\bbb_security_cam.pub" |
 ssh debian@<BBB-LAN-IP> 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys'
 ```
 
 Test the key:
-
 ```powershell
 ssh -i "$env:USERPROFILE\.ssh\bbb_security_cam" `
     -o PasswordAuthentication=no `
     debian@<BBB-LAN-IP>
 ```
 
+If the key has a passphrase, this will ask for the SSH key passphrase.
+
 Do not run the hardening installer until this works.
 
-If you ran the hardening and have no access: you may be able to use a serial COM port connection by plugging the BBB directly into your PC, and using Tera Term. Make sure to change Tera Terms default rate from 9600 to 115200.
+If SSH hardening is accidentally applied before working key authentication is confirmed, recovery may require connecting to the BBB through its serial console. Tera Term can be used for this; the serial baud rate/ "Speed" is `115200`.
 
 ---
 
-# 9. Run the Installer
+# 7. Run the Installer
 
 From the extracted project directory:
-
 ```bash
-cd ~/security-cam
+cd appliance/
 ```
 
 Run:
-
 ```bash
 sudo ./hardening/setup-hardening.sh
 ```
 
 The installer installs and configures:
-
 ```text
 Motion
 FFmpeg
@@ -403,7 +305,6 @@ systemd units
 ```
 
 It also creates:
-
 ```text
 /opt/security-cam/
 /etc/security-cam/
@@ -415,36 +316,26 @@ and applies the project's firewall and service configuration.
 
 ---
 
-# 10. Fix Recording-Storage Ownership
+# 8. Fix Recording-Storage Ownership
 
 Because the storage is a separate filesystem, verify ownership after installation:
-
 ```bash
 sudo chown motion:motion /var/lib/security-cam
 sudo chmod 750 /var/lib/security-cam
 ```
 
 Create/fix the required directories:
-
 ```bash
 sudo install -d -o motion -g motion -m 0750 \
   /var/lib/security-cam/ring
-```
 
-```bash
 sudo install -d -o motion -g motion -m 0750 \
   /var/lib/security-cam/saved_events
 ```
 
 Verify Motion can write:
-
 ```bash
 sudo -u motion touch /var/lib/security-cam/.write-test
-```
-
-Then:
-
-```bash
 sudo -u motion rm /var/lib/security-cam/.write-test
 ```
 
@@ -452,42 +343,42 @@ If both commands succeed silently, permissions are correct.
 
 ---
 
-# 11. Verify Camera Services
+# 9. Verify Camera Services
 
 Check:
-
 ```bash
 sudo /usr/local/sbin/security-cam-ctl status
 ```
 
-Also:
-
+For a more in-depth check:
 ```bash
 systemctl --no-pager --full status motion
 systemctl --no-pager --full status segment-ring
 systemctl status prune-saved-events.timer
 ```
 
-If necessary:
-
+If necessary, restart the services:
 ```bash
 sudo /usr/local/sbin/security-cam-ctl restart
 ```
 
 ---
 
-# 12. Verify the Rolling Buffer
+# 10. Verify the Rolling Buffer
 
 Wait roughly one minute, then inspect:
-
 ```bash
 sudo ls -lh /var/lib/security-cam/ring
 ```
 
-You should begin seeing AVI segment files.
+Or simply check that storage is being used, then discarded (so long as motion was not triggered):
+```bash
+sudo df -h /var/lib/security-cam/
+```
 
-Check disk activity:
+You should begin seeing AVI segment files or storage being used, then discarded.
 
+Check disk usage:
 ```bash
 df -h /var/lib/security-cam
 ```
@@ -495,99 +386,93 @@ df -h /var/lib/security-cam
 The files should be consuming space from the microSD rather than `/`.
 
 Compare:
-
 ```bash
 df -h /
 df -h /var/lib/security-cam
 ```
 
-The root filesystem should remain essentially unchanged while video is being written. ('df -h /' may report ~50MB being used then deleted, this is ok).
+The root filesystem should remain essentially unchanged while video is being written.
+
+A small amount of temporary variation on `/` is normal due to the buffer, but continuous growth is not. If it is, run the stop command to prevent filling the eMMC.
+```bash
+sudo /usr/local/sbin/security-cam-ctl stop
+```
 
 ---
 
-# 13. Test Motion Detection
+# 11. Test Motion Detection
 
-Move in front of the camera for a few seconds, do a little dance. At the home stretch now!
+Move in front of the camera for a few seconds. Do a little dance. It's the home stretch now
 
 Check Motion logs:
-
 ```bash
 journalctl -u motion -n 100 --no-pager
 ```
 
 Check event directories:
-
 ```bash
 sudo find /var/lib/security-cam/saved_events \
   -maxdepth 2 -type f -ls
 ```
 
 A triggered event should create a timestamped directory under:
-
 ```text
 /var/lib/security-cam/saved_events/
 ```
 
-The preserved segments are hard links to completed ring-buffer files. They write in 30s segments to not overfill the RAM, so wait a minute or two to see if they're writing correctly.
+The event collector writes in 30-second segments, so give it a minute or two before assuming it failed.
 
-A link count greater than one is therefore expected:
-
+The preserved segments are initially hard links to completed rolling-buffer files. While the corresponding file still exists in the ring buffer, a link count greater than one is expected:
 ```bash
 sudo ls -l /var/lib/security-cam/saved_events/*/*
 ```
 
+After the source ring-buffer entry is eventually removed, the saved event file may correctly show a link count of `1`.
+
 ---
 
-# 14. Configure WireGuard Keys
+# 12. Configure WireGuard Keys
 
-Note: These are your secrets, keep them safe, if you upload them online do not use them. Does not matter if it's seemingly private, do not upload them. DO NOT UPLOAD THEM. 
-Each device needs a unique:
+These are secrets. Keep them safe. Do not upload private keys or preshared keys anywhere.
 
+Each device needs:
 ```text
-Private key
-Public key
-Preshared key shared with the BBB
+A unique private key
+A matching public key
+A unique preshared key shared with the BBB
 ```
 
 The intended VPN addresses are:
-
 ```text
-BBB       10.10.10.1
-iPhone    10.10.10.2
-Desktop   10.10.10.3
-Laptop    10.10.10.4
+BBB        10.10.10.1
+iPhone     10.10.10.2
+Desktop    10.10.10.3
+Laptop     10.10.10.4
 ```
+
+Public keys are safe to share when needed. Private keys and PSKs are not.
 
 ---
 
-# 15. BBB WireGuard Configuration
+# 13. BBB WireGuard Configuration
 
-Start with:
-
-```text
-wireguard/bbb_wg0.conf.example
-```
-
+Start with setting up the BBB's conf.
 Copy it:
-
 ```bash
 sudo cp wireguard/bbb_wg0.conf.example /etc/wireguard/wg0.conf
 ```
 
 Secure it:
-
 ```bash
 sudo chmod 600 /etc/wireguard/wg0.conf
 ```
 
 Edit:
-
 ```bash
 sudo nano /etc/wireguard/wg0.conf
 ```
 
 The layout is:
-
 ```ini
 [Interface]
 Address = 10.10.10.1/24
@@ -596,144 +481,133 @@ PrivateKey = <BBB_PRIVATE_KEY>
 
 [Peer]
 # iPhone
-PublicKey = <IPHONE_PUBLIC_KEY>
-PresharedKey = <IPHONE_PSK>
+PublicKey = <COMPUTER1_PUBLIC_KEY>
+PresharedKey = <COMPUTER1_PSK>
 AllowedIPs = 10.10.10.2/32
 
 [Peer]
 # Desktop
-PublicKey = <DESKTOP_PUBLIC_KEY>
-PresharedKey = <DESKTOP_PSK>
+PublicKey = <COMPUTER2_PUBLIC_KEY>
+PresharedKey = <COMPUTER2_PSK>
 AllowedIPs = 10.10.10.3/32
 
 [Peer]
 # Laptop
-PublicKey = <LAPTOP_PUBLIC_KEY>
-PresharedKey = <LAPTOP_PSK>
+PublicKey = <COMPUTER3_PUBLIC_KEY>
+PresharedKey = <COMPUTER3_PSK>
 AllowedIPs = 10.10.10.4/32
 ```
 
-The BBB receives each client's **public** key. Never put a client's private key on the BBB. Don't share them using an online service. Use an ssh session or similar to directly upload them from your PC to the BBB.
+The BBB receives each client's **public** key. Don't put a client's private key on the BBB.
 
 ---
 
-# 16. Client WireGuard Configuration
+# 14. Client WireGuard Configuration
 
 Each client gets:
-
 ```text
-A unique private key
+Its own private key
 The BBB public key
-A unique shared PSK (shared with the BBB)
-BBB endpoint
+Its own PSK shared with the BBB
+The BBB endpoint, for a LAN connection, the LAN IP can be used (recommended for initial setup).
 ```
 
 Example desktop:
-
 ```ini
 [Interface]
 PrivateKey = <DESKTOP_PRIVATE_KEY>
-Address = 10.10.10.2/32
+Address = 10.10.10.3/32
 
 [Peer]
 PublicKey = <BBB_PUBLIC_KEY>
 PresharedKey = <DESKTOP_PSK>
-Endpoint = <PUBLIC-IP-OR-DDNS>:51820
+Endpoint = <BBB-ENDPOINT>:51820
 AllowedIPs = 10.10.10.1/32
 PersistentKeepalive = 25
 ```
 
-Desktop:
+iPhone:
+```text
+10.10.10.2/32
+```
 
+Desktop:
 ```text
 10.10.10.3/32
 ```
 
 Laptop:
-
 ```text
 10.10.10.4/32
 ```
 
-For a desktop that permanently remains on the same LAN, the endpoint can also be the BBB's LAN address:
+Remote cellular or laptop connections normally require a public endpoint and UDP port forwarding, or another NAT-traversal solution such as Tailscale/ZeroTier.
 
-```ini
-Endpoint = <BBB-LAN-IP>:51820
-```
+If fewer peers are needed, remove them. If more are needed, add additional unique addresses and keys.
 
-Remote cellular/laptop connections normally require a public endpoint or NAT-traversal solution. If you want less devices, remove peers, if you want more, add them.
+You can upload the .conf's directly to Windows' WireGuard GUI client.
 
 ---
 
-# 17. Enable WireGuard
+# 15. Enable WireGuard
 
 Once `/etc/wireguard/wg0.conf` is complete:
-
 ```bash
 sudo systemctl enable --now wg-quick@wg0
 ```
 
 Check:
-
 ```bash
 sudo wg show
-```
-
-and:
-
-```bash
 ip addr show wg0
 ```
 
 The BBB should have:
-
 ```text
 10.10.10.1/24
 ```
 
 ---
 
-# 18. Test WireGuard Before Relying on It
+# 16. Test WireGuard Before Relying on It
 
-Activate one client by uploading its corresponding .conf to WireGuard. LAN tests are recommended so you don't have to deal with port forwarding.
+Activate one client using its corresponding WireGuard configuration.
+
+Testing on the same LAN first is recommended because it separates WireGuard configuration problems from router/port-forwarding problems.
 
 On the BBB:
-
 ```bash
 sudo wg show
 ```
 
 A functioning peer should show:
-
 ```text
 latest handshake: ...
 transfer: ... received, ... sent
 ```
 
-From a client:
-
+From the client:
 ```text
 ping 10.10.10.1
 ```
 
 If SSH is configured:
-
 ```bash
 ssh debian@10.10.10.1
 ```
 
+If the tunnel works over LAN but not from cellular/off-LAN, WireGuard itself is probably configured correctly. Check the public endpoint, router UDP forwarding, upstream NAT, or CGNAT. Make router changes as necessary, just don't expose more than you need to.
+
 ---
 
-# 19. Configure the Windows SSH Shortcut
+# 17. Configure the Windows SSH Shortcut
 
 On Windows, edit:
-
 ```text
 %USERPROFILE%\.ssh\config
 ```
 
 Add:
-
 ```text
 Host bbb
     HostName 10.10.10.1
@@ -743,28 +617,22 @@ Host bbb
 ```
 
 Then test:
-
 ```powershell
 ssh bbb
 ```
 
-Once this works, later commands such as:
-
+Once this works, commands such as:
 ```powershell
 scp bbb:/path/to/file .
 ```
 
-will use the same VPN address and SSH key automatically. You can also use `ssh bbb` instead of the longer ssh command.
+will use the same VPN address and SSH key automatically.
 
 ---
 
-# 20. Test the Live Camera Stream
+# 18. Test the Live Camera Stream
 
-With WireGuard connected, access the Motion stream using:
-
-```text
-http://10.10.10.1:8081/
-```
+With WireGuard connected, access the Motion stream using `http://10.10.10.1:8081/`. This can be input to a browser, and you should receive a camera feed.
 
 Port `8081` is permitted only from the WireGuard interface by the nftables configuration.
 
@@ -772,10 +640,9 @@ The Motion administrative/control interface on port `8080` remains localhost-onl
 
 ---
 
-# 21. Verify nftables
+# 19. Verify nftables
 
 Check the firewall:
-
 ```bash
 sudo nft -a list ruleset
 ```
@@ -783,7 +650,6 @@ sudo nft -a list ruleset
 The input chain should follow a default-drop policy.
 
 Expected permitted traffic includes:
-
 ```text
 loopback
 established/related traffic
@@ -793,56 +659,33 @@ camera stream from wg0
 limited ICMP
 ```
 
-The final rule should silently drop unwanted traffic:
-
-```text
-counter drop
-```
-
-There should not be an:
-
-```text
-nft-drop:
-```
-
-logging rule. If there is, I would recommend removing it, as it spams your dmesg output. However, it can be nice for ensuring only verified peers are talking to the BBB.
+The final unmatched traffic rule should silently drop traffic rather than continuously logging it.
 
 Validate the stored firewall configuration:
-
 ```bash
 sudo nft -c -f /etc/nftables.conf
 ```
 
+No output means the configuration parsed successfully.
+
 ---
 
-# 22. Verify Fail2Ban
+# 20. Verify Fail2Ban
 
 Check:
-
 ```bash
 sudo systemctl status fail2ban
-```
-
-Then:
-
-```bash
 sudo fail2ban-client status
-```
-
-And:
-
-```bash
 sudo fail2ban-client status sshd
 ```
 
-The project uses the systemd journal backend rather than a traditional SSH logfile.
+This project uses the systemd journal backend rather than a traditional SSH logfile.
 
 ---
 
-# 23. Verify Automatic Startup
+# 21. Verify Automatic Startup
 
 The following should be enabled:
-
 ```bash
 systemctl is-enabled motion.service
 systemctl is-enabled segment-ring.service
@@ -852,71 +695,54 @@ systemctl is-enabled fail2ban
 ```
 
 Once WireGuard is configured:
-
 ```bash
 systemctl is-enabled wg-quick@wg0
 ```
 
 ---
 
-# 24. Reboot Test
+# 22. Reboot Test
 
-A security appliance must recover correctly after a power loss.
+Naturally, the application needs to recover correctly after a power loss.
 
 Reboot:
-
 ```bash
-sudo reboot
+sudo reboot now
 ```
 
-Wait for the BBB to return.
+Wait for the BBB to boot and reconnect to the network.
 
 Reconnect:
-
 ```powershell
 ssh bbb
 ```
 
-Then check:
+If you have issues reconnecting / you're getting "Connection refused", try restarting your PC. For some reason that fixed `ssh bbb` for me.
 
+Then check:
 ```bash
 sudo /usr/local/sbin/security-cam-ctl status
-```
-
-```bash
 findmnt /var/lib/security-cam
-```
-
-```bash
 sudo wg show
-```
-
-```bash
 systemctl --no-pager --full status motion segment-ring
 ```
 
-Verify new files are appearing:
-
+Verify new rolling-buffer files are appearing:
 ```bash
 sudo ls -lh /var/lib/security-cam/ring
 ```
 
-And test the stream again:
-
-```text
-http://10.10.10.1:8081/
-```
+Test the stream again, on a browser. `http://10.10.10.1:8081/`
 
 ---
 
-# 25. Critical Missing-microSD Test
+# 23. Critical Missing-microSD Test
 
-The project is specifically designed not to fall back to the eMMC.
+The project is specifically designed not to silently fall back to the eMMC.
 
-A useful final test is to boot without the recording microSD available.
+A useful final test is to boot with the microSD removed from the BBB.
 
 Check:
-
 ```bash
 findmnt /var/lib/security-cam
 ```
@@ -924,31 +750,28 @@ findmnt /var/lib/security-cam
 If the card is absent, it should not report a mounted recording filesystem. The recording scripts should refuse to write.
 
 Check:
-
 ```bash
 systemctl status segment-ring
-```
-
-and:
-
-```bash
 journalctl -u segment-ring -n 50 --no-pager
 ```
 
-The root filesystem should not begin filling with video data. A buffer may be getting filled an emptied, however (roughly 50MB).
+The eMMC filesystem should not begin filling with video files.
 
-Before recording again, restore the microSD and verify:
-
+Before recording again, plug in the the microSD and verify:
 ```bash
 findmnt /var/lib/security-cam
 ```
 
+Then restart the camera services if needed:
+```bash
+sudo /usr/local/sbin/security-cam-ctl restart
+```
+
 ---
 
-# 26. Useful Final Health Check
+# 24. Final Health Check
 
 Run:
-
 ```bash
 echo "=== STORAGE ==="
 findmnt /var/lib/security-cam
@@ -975,79 +798,6 @@ systemctl --no-pager --full status \
   prune-saved-events.timer
 ```
 
-At this point the BBB and services should be fully operational.
+At this point the BBB and its services should be fully operational.
 
----
-
-# Important Security Notes
-
-Never upload any of the following online:
-
-```text
-WireGuard private keys
-WireGuard preshared keys
-SSH private keys
-passwords
-real exported camera recordings
-```
-
-Public keys are not secret, but private keys and PSKs are.
-
----
-
-# Common Administration Commands
-
-Camera:
-
-```bash
-sudo /usr/local/sbin/security-cam-ctl {status|on|off|restart}
-```
-
-Stop/start all recording activity:
-
-```bash
-sudo systemctl {stop/start} segment-ring motion prune-saved-events.timer
-```
-
-Check recording storage:
-
-```bash
-df -h /var/lib/security-cam
-```
-
-Check mount:
-
-```bash
-findmnt /var/lib/security-cam
-```
-
-WireGuard:
-
-```bash
-sudo wg show
-```
-
-Motion logs:
-
-```bash
-journalctl -u motion -n 100 --no-pager
-```
-
-Ring-buffer logs:
-
-```bash
-journalctl -u segment-ring -n 100 --no-pager
-```
-
-Firewall:
-
-```bash
-sudo nft list ruleset
-```
-
-Checking drive storage sizes first eMMC then the uSD:
-
-```bash
-sudo df -h /
-sudo df -h /var/lib/security-cam
-```
+For normal operation, exporting recordings, clearing saved events, storage checks, and other day-to-day commands, see `README.md`.
