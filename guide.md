@@ -1,18 +1,18 @@
-# BeagleBone Black Security Camera — Setup Guide
+# BeagleBone Black (BBB) Security Camera Setup Guide
 
 This guide assumes:
 
-- BeagleBone Black running Debian 12 (setup tested on v6.18.x kernel) / BeagleBoard image
+- BBB running Debian 12 (setup tested on v6.18.x kernel) / [Tested BBB image](https://www.beagleboard.org/distros/beaglebone-black-debian-12-15-2026-09-20-iot-v6-18-x)
 - Ethernet networking
 - Microsoft LifeCam Cinema or another compatible UVC camera
-- Separate microSD card for recording storage
+- Separate microSD (uSD) card for recording storage
 - Windows PC used for initial setup
 - The provided micro USB cable for the BBB
 
 The intended final architecture is:
 
 ```text
-BeagleBone eMMC holds:
+BBB eMMC holds:
  Debian install
  Motion
  FFmpeg
@@ -20,7 +20,7 @@ BeagleBone eMMC holds:
  nftables
  security-camera scripts
 
-microSD holds:
+uSD holds:
 /var/lib/security-cam
 which contains the rolling buffer and saved events.
 ```
@@ -29,7 +29,7 @@ The recording scripts deliberately refuse to write if `/var/lib/security-cam` is
 
 ---
 
-# 1. Connect to the BeagleBone
+# 1. Connect to the BBB
 
 Connect the BBB to Ethernet, plug it into your PC with the micro USB cable, and determine its LAN IP address.
 
@@ -150,12 +150,12 @@ Do not continue if the camera is not detected. Without a UVC-compatible video so
 
 ---
 
-# 4. Configure the Recording microSD
+# 4. Configure the Recording uSD
 
-Be careful here. The BBB eMMC and microSD may appear similar:
+Be careful here. The BBB eMMC and uSD may appear similar:
 ```text
 mmcblk1  (typically) → BBB eMMC
-mmcblk0  (typically) → microSD
+mmcblk0  (typically) → uSD
 ```
 
 Verify before formatting anything:
@@ -166,14 +166,14 @@ lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS
 On my tested system:
 ```text
 mmcblk1        ~3.6G     BBB eMMC
-mmcblk0        ~29.2G    recording microSD
+mmcblk0        ~29.2G    recording uSD
 ```
 
 Never blindly copy device names or formatting commands from this guide without verifying them on your own board.
 
 ---
 
-## 4.1 Format the microSD
+## 4.1 Format the uSD
 
 If the card already contains the desired ext4 filesystem, or you have data on it you'd like to save, skip this step.
 
@@ -232,7 +232,7 @@ findmnt /var/lib/security-cam
 df -h /var/lib/security-cam
 ```
 
-You should see the microSD filesystem, not the eMMC root filesystem. Do not continue until this is correct.
+You should see the uSD filesystem, not the eMMC root filesystem. Do not continue until this is correct.
 
 Be careful with `mkfs` and `/etc/fstab`; using the wrong device will simply not work in the long-run.
 
@@ -383,7 +383,7 @@ Check disk usage:
 df -h /var/lib/security-cam
 ```
 
-The files should be consuming space from the microSD rather than `/`.
+The files should be consuming space from the uSD rather than `/`.
 
 Compare:
 ```bash
@@ -736,11 +736,11 @@ Test the stream again, on a browser. `http://10.10.10.1:8081/`
 
 ---
 
-# 23. Critical Missing-microSD Test
+# 23. Critical Missing-uSD Test
 
 The project is specifically designed not to silently fall back to the eMMC.
 
-A useful final test is to boot with the microSD removed from the BBB.
+A useful final test is to boot with the uSD removed from the BBB.
 
 Check:
 ```bash
@@ -757,7 +757,7 @@ journalctl -u segment-ring -n 50 --no-pager
 
 The eMMC filesystem should not begin filling with video files.
 
-Before recording again, plug in the the microSD and verify:
+Before recording again, plug in the the uSD and verify:
 ```bash
 findmnt /var/lib/security-cam
 ```
