@@ -1,28 +1,24 @@
 # BeagleBone Black Networked Security Camera
 
-A hardened home security camera appliance built around a **BeagleBone Black** (BBB), a **USB UVC webcam**, and Debian Linux (version 12, v6.18.x).
+A hardened home security camera application built around a BeagleBone Black (BBB), a USB UVC-compliant webcam, and Debian (version 12, v6.18.x).
 
-The system provides:
+It provides:
 
 - 720p live camera streaming @ 15fps
-- Motion-triggered recording
-- Rolling video buffering
-- Six-minute post-trigger event capture
-- Recording directly to removable microSD (uSD) storage
-- Remote administration over encrypted WireGuard VPN
-- SSH access restricted to trusted VPN peers
-- nftables firewalling
+- Motion-triggered recording, 6-minute post-trigger event capture
+- Recording directly to removable microSD (uSD)
+- Remote administration over WireGuard, ssh restricted to WireGuard VPN peers
+- nftables firewalling / [fail2ban](https://github.com/fail2ban/fail2ban) setup
 - systemd-managed camera and recording services
-- Automatic saved-event pruning and storage limits
-- Hardened service permissions and filesystem access
+- Auto saved event pruning and storage limits
 
-The project was designed around the BeagleBone Black's limited AM335x CPU resources, so the video pipeline avoids unnecessary transcoding wherever possible.
+The project was designed to run on limited resources, so video processing is avoided whenever possible.
 
 ---
 
 ## Hardware
 
-Development hardware:
+Developed with:
 
 - BeagleBone Black
 - Microsoft LifeCam Cinema USB webcam
@@ -33,76 +29,47 @@ Camera configuration:
 
 - Resolution: `1280x720`
 - Frame rate: `15 FPS`
-- Camera format: hardware MJPEG
+- Camera format: hardware MJPG
 
-The operating system and application stack run from the BBB's onboard eMMC, while camera recordings are written to the uSD card.
+The OS and application stack run from the BBB's onboard eMMC, while camera recordings are written to the uSD card.
 
 ---
 
 ## Software
 
-The appliance uses:
+This setup uses:
 
-- Debian 12 Bookworm
-- Motion
-- FFmpeg
-- WireGuard
-- OpenSSH
-- nftables
-- fail2ban
-- systemd
-- Bash
+- [Debian 12 from Beagleboard](https://www.beagleboard.org/distros/beaglebone-black-debian-12-15-2026-09-20-iot-v6-18-x)
+- [Motion](https://motion-project.github.io/)
+- [FFmpeg](https://ffmpeg.org/download.html)
+- [WireGuard](https://www.wireguard.com/install/)
+- [OpenSSH](https://www.openssh.org/)
+- [nftables](https://wiki.nftables.org/wiki-nftables/index.php/Main_Page)
+- [fail2ban](https://github.com/fail2ban/fail2ban)
 
 ---
 
 # Architecture
 
-The camera device is owned by Motion:
-
-```text
-USB Camera
-    |
-    v
- Motion
-    |
-    +---- Live MJPEG stream
-    |
-    +---- Motion detection
-              |
-              v
-       Event collection
-```
-
-A separate FFmpeg process reads Motion's local MJPEG stream and maintains a rolling collection of video segments:
-
-```text
-Motion MJPEG stream
-        |
-        v
-      FFmpeg
-        |
-        v
-/var/lib/security-cam/ring/
-```
-
+The camera device is owned by Motion, which deals with the video stream.
+A separate FFmpeg process reads Motion's local MJPEG stream and maintains a rolling collection of video segments.
 When Motion detects activity, the event collector preserves recent pre-trigger segments and continues collecting video for at least six minutes after the event trigger.
 
 Saved events are stored under:
-
 ```text
 /var/lib/security-cam/saved_events/
 ```
 
-The `/var/lib/security-cam` filesystem is mounted from removable storage so video recording does not consume the BBB's small eMMC filesystem.
+The `/var/lib/security-cam` filesystem is mounted to the uSD so video recording does not consume the BBB's eMMC.
+The system itself is designed to fit on the BBB's eMMC, however.
 
 ---
 
 # Security Model
 
-The appliance is configured with a default-deny firewall. External access is intended to occur only through WireGuard.
+The system is configured with a default-deny firewall. External access is intended to occur only through WireGuard.
 
-After setting up WireGuard, the default VPN addresses are:
-
+After setting up WireGuard, the default VPN addresses are (add more to wg0.conf if needed):
 ```text
 BBB:           10.10.10.1
 Computer 1:    10.10.10.2
@@ -110,44 +77,8 @@ Computer 2:    10.10.10.3
 Computer 3:    10.10.10.4
 ```
 
-SSH and the live camera stream are restricted to authenticated VPN peers.
-
+SSH and the live camera stream are restricted to authenticated VPN peers (setup in wg0.conf on the BBB and also on each peer)
 The Motion control interface remains localhost-only.
-
----
-
-# Project Layout
-
-Repository layout:
-
-```text
-.
-├── hardening/
-│   ├── nftables.conf
-│   ├── setup-hardening.sh
-│   ├── sshd-security.conf
-│   ├── sudoers-security-cam
-│   └── sysctl-hardening.conf
-│
-├── motion/
-│   └── motion.conf
-│
-├── security-cam/
-│   ├── prune-saved-events.service
-│   ├── prune-saved-events.sh
-│   ├── prune-saved-events.timer
-│   ├── save-event.sh
-│   ├── security-cam-ctl
-│   ├── security-cam-ssh-control
-│   ├── segment-ring.service
-│   └── segment-ring.sh
-│
-└── wireguard/
-    ├── bbb_wg0.conf.example
-    ├── computer_wg0.conf.example
-    ├── laptop_wg0.conf.example
-    └── phone_wg0.conf.example
-```
 
 ---
 
@@ -165,7 +96,7 @@ sudo /usr/local/sbin/security-cam-ctl {status|on|off|restart}
 
 `on` brings the camera system back online.
 
-`restart` does what you expect it to.
+`restart` runs `off` then `on`.
 
 ---
 
@@ -185,7 +116,7 @@ To stop/start all writing to the uSD card:
 sudo systemctl {stop/start} segment-ring.service motion.service prune-saved-events.timer
 ```
 
-Check service status:
+Check service status :
 
 ```bash
 systemctl --no-pager --full status \
@@ -199,36 +130,31 @@ systemctl --no-pager --full status \
 # Check Camera Status
 
 If debugging, using systemctl status plainly provides additional systemd status information:
-
 ```bash
 systemctl status motion
 systemctl status segment-ring
 ```
 
 Recent Motion logs:
-
 ```bash
 journalctl -u motion -n 100 --no-pager
 ```
 
 Recent rolling-buffer logs:
-
 ```bash
 journalctl -u segment-ring -n 100 --no-pager
 ```
 
 ---
 
-# Check Storage Space
+# Check Storage Space / Mount
 
 Check free space on the recording uSD:
-
 ```bash
 df -h /var/lib/security-cam
 ```
 
 Inspect storage, saved-event, and ring buffer usage:
-
 ```bash
 sudo du -h -d1 /var/lib/security-cam
 sudo du -sh /var/lib/security-cam/saved_events
@@ -236,7 +162,6 @@ sudo du -sh /var/lib/security-cam/ring
 ```
 
 Confirm that the recording filesystem is actually mounted:
-
 ```bash
 findmnt /var/lib/security-cam
 ```
@@ -267,13 +192,11 @@ sudo tar -cf /var/lib/security-cam/saved_events.tar \
 MJPEG video is already compressed, so an uncompressed `.tar` is preferred over gzip or ZIP on the BBB's limited CPU. Processing may take a few minutes depending on how many files were saved.
 
 Check the archive:
-
 ```bash
 sudo ls -lh /var/lib/security-cam/saved_events.tar
 ```
 
 Optionally inspect its contents:
-
 ```bash
 sudo tar -tf /var/lib/security-cam/saved_events.tar | head
 ```
@@ -283,64 +206,46 @@ sudo tar -tf /var/lib/security-cam/saved_events.tar | head
 ## 3. Make the archive accessible to the SSH user
 
 Assign ownership of the archive to the normal Debian user:
-
 ```bash
 sudo chown debian:debian /var/lib/security-cam/saved_events.tar
 sudo chmod 600 /var/lib/security-cam/saved_events.tar
 ```
 
 The storage root is normally:
-
+```text
 motion:motion
 0750
+```
 
 so temporarily allow directory traversal:
-
 ```bash
 sudo chmod 751 /var/lib/security-cam
 ```
 
-Don't change the perms of `~/saved_events/` itself.
+Don't change the perms of `~/saved_events/`.
 
 ---
 
 ## 4. Copy to Windows
 
 Run this from Windows PowerShell, (not from the SSH session):
-
 ```powershell
 scp bbb:/var/lib/security-cam/saved_events.tar "$env:USERPROFILE\Videos\"
 ```
 
-The `bbb` hostname may be defined on Windows, in the user folder:
-
-```text
-~/.ssh/config
-```
-
-For example:
-
-```text
-Host bbb
-    HostName 10.10.10.1
-    User debian
-    IdentityFile ~/.ssh/bbb_security_cam
-    PasswordAuthentication no
-```
+The `bbb` hostname may be defined on Windows, in the user's ssh folder (check the guide for instructions).
 
 ---
 
 ## 5. Restore permissions
 
 After confirming that the archive copied successfully:
-
 ```bash
 rm /var/lib/security-cam/saved_events.tar
 sudo chmod 750 /var/lib/security-cam
 ```
 
 Restart the camera:
-
 ```bash
 sudo /usr/local/sbin/security-cam-ctl on
 ```
@@ -357,10 +262,7 @@ If the saved recordings are no longer needed, stop all writers before deleting t
 sudo systemctl stop segment-ring.service motion.service prune-saved-events.timer
 ```
 
----
-
-## 2. Confirm nothing is writing
-
+Confirm nothing is writing:
 ```bash
 sudo fuser -vm \
   /var/lib/security-cam/saved_events \
@@ -368,26 +270,22 @@ sudo fuser -vm \
 ```
 
 A result similar to:
-
 ```text
 root   kernel   mount   /var/lib/security-cam
 ```
 
-is normal because the uSD filesystem itself is mounted there. There should not be active Motion or FFmpeg processes using those directories.
+is expected because the uSD filesystem itself is mounted there. There should not be active Motion or FFmpeg processes using those directories.
 
 ---
 
 ## 3. Remove saved events
-
 Use `find` so hidden files and directories are also handled:
-
 ```bash
 sudo find /var/lib/security-cam/saved_events \
   -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 ```
 
 Verify:
-
 ```bash
 sudo ls -la /var/lib/security-cam/saved_events
 ```
@@ -441,43 +339,38 @@ systemctl --no-pager --full status motion segment-ring
 # WireGuard
 
 Check WireGuard status:
-
 ```bash
 sudo wg show
 ```
 
-A functioning peer should show:
-
+A connected peer should show:
 ```text
 latest handshake: ...
 transfer: ... received, ... sent
 ```
 
 Check the BBB interface:
-
 ```bash
 ip addr show wg0
 ```
 
 Port forwarding, UPnP, or a VPS may be needed to connect off-network devices to the BBB (due to things like CGNAT and typical default firewall rules). Default listening port is 51820.
+
 ---
 
 # Debugging Remote WireGuard Traffic
 
 To verify that WireGuard packets are reaching the BBB:
-
 ```bash
 sudo tcpdump -ni eth0 udp port 51820
 ```
 
 To inspect decrypted VPN traffic:
-
 ```bash
 sudo tcpdump -ni wg0
 ```
 
 To exclude a known LAN desktop from the packet capture:
-
 ```bash
 sudo tcpdump -ni eth0 \
   'udp dst port 51820 and not src host DESKTOP_LAN_IP'
@@ -492,30 +385,21 @@ If no packets reach `eth0`, investigate router port forwarding, the public IP/DD
 # nftables
 
 View the firewall:
-
 ```bash
 sudo nft list ruleset
 ```
 
 Validate the persistent configuration:
-
 ```bash
 sudo nft -c -f /etc/nftables.conf
 ```
 
 Reload it:
-
 ```bash
 sudo nft -f /etc/nftables.conf
 ```
 
 The firewall uses a default-drop input policy.
-
-The final drop rule intentionally does not log rejected traffic in order to avoid unnecessary journal/eMMC writes:
-
-```text
-counter drop
-```
 
 ---
 
@@ -529,8 +413,7 @@ Example Windows SSH key generation:
 ssh-keygen -t ed25519 -a 100 -f "$env:USERPROFILE\.ssh\bbb_security_cam"
 ```
 
-Highly recommended to add a password to the key. Assuming the SSH key was generated on Windows as shown above, this creates:
-
+It's highly recommended to add a password to the key. Assuming the SSH key was generated on Windows as shown above, this creates:
 ```text
 bbb_security_cam       # Private key — keep this on the PC
 bbb_security_cam.pub   # Public key — copy this to the BBB
@@ -566,31 +449,26 @@ Don't close the SSH session if youre doubtful it was setup correctly, as you wou
 # Camera Device Debugging
 
 List video devices:
-
 ```bash
 ls -l /dev/video*
 ```
 
 Check camera USB detection:
-
 ```bash
 lsusb
 ```
 
 For the Microsoft LifeCam Cinema:
-
 ```text
 1234:abcd Microsoft Corp. LifeCam Cinema
 ```
 
 Inspect supported formats (replace /dev/video0 to your reported camera endpoint if required):
-
 ```bash
 v4l2-ctl --device=/dev/video0 --list-formats-ext
 ```
 
 Check Motion's access:
-
 ```bash
 id motion
 ```
@@ -602,26 +480,22 @@ The `motion` user should have access to the `video` group.
 # uSD Debugging
 
 List storage devices:
-
 ```bash
 lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS
 ```
 
 Check MMC-related kernel messages:
-
 ```bash
 dmesg | grep -Ei 'mmc|sdhci'
 ```
 
 nft-drop may spam the log. Use this to clear the output then restart, checking for "mmc0"/"blk0" (mmc1 is typically the eMMC):
-
 ```bash
 sudo dmesg -C
 sudo restart now
 ```
 
 Confirm the security-camera filesystem:
-
 ```bash
 findmnt /var/lib/security-cam
 ```
@@ -630,14 +504,9 @@ findmnt /var/lib/security-cam
 
 # Storage Retention
 
-Saved-event pruning is controlled through:
+Saved-event pruning is setup in ../security-cam/prune-saved-events.sh
 
-```text
-/etc/security-cam/storage.conf
-```
-
-Example:
-
+Default:
 ```text
 MAX_EVENT_GIB=8
 MAX_EVENT_AGE_DAYS=14
@@ -646,15 +515,9 @@ MIN_FREE_GIB=2
 
 The pruning service periodically removes old recordings according to these limits.
 
-Check timer status:
-
+Check timer status or list upcoming timer runs:
 ```bash
 systemctl status prune-saved-events.timer
-```
-
-List upcoming timer runs:
-
-```bash
 systemctl list-timers prune-saved-events.timer
 ```
 
@@ -681,10 +544,9 @@ systemctl list-timers prune-saved-events.timer
 
 ---
 
-# Useful Health Check
+# Quick Setup Check
 
-For a quick system check:
-
+To check the system:
 ```bash
 echo "=== CAMERA ==="
 sudo /usr/local/sbin/security-cam-ctl status
