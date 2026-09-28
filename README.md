@@ -160,7 +160,8 @@ scp bbb:/var/lib/security-cam/saved_events.tar "$env:USERPROFILE\Videos\"
 
 After confirming the transfer:
 ```bash
-rm /var/lib/security-cam/saved_events.tar
+sudo rm -f /var/lib/security-cam/.current_event
+sudo rm -f /var/lib/security-cam/saved_events.tar
 sudo chmod 750 /var/lib/security-cam
 sudo /usr/local/sbin/security-cam-ctl on
 ```
