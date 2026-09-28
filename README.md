@@ -54,7 +54,7 @@ This setup uses:
 # Architecture
 
 The camera device is owned by Motion, which handles the video stream and motion detection.
-A separate FFmpeg process reads Motion's local MJPEG stream and maintains a rolling collection of 30-second video segments.
+A separate FFmpeg process reads Motion's local MJPG stream and maintains a rolling collection of 30-second video segments.
 When Motion detects activity, the event collector preserves recent pre-trigger segments and continues collecting video for at least six minutes after the event trigger.
 
 Saved events are stored under:
@@ -144,7 +144,7 @@ sudo tar -cf /var/lib/security-cam/saved_events.tar \
   -C /var/lib/security-cam saved_events
 ```
 
-MJPEG video is already compressed, so an uncompressed `.tar` avoids unnecessary CPU usage.
+MJPG video is already compressed, so an uncompressed `.tar` avoids unnecessary CPU usage.
 
 Make the archive accessible to the normal SSH user:
 ```bash
