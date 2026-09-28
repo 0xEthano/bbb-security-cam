@@ -195,6 +195,11 @@ sudo find /var/lib/security-cam/ring \
   -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 ```
 
+And the created saved_events.tar if present:
+```bash
+sudo rm -f /var/lib/security-cam/saved_events.tar
+```
+
 Restore ownership and permissions:
 ```bash
 sudo chown motion:motion \
